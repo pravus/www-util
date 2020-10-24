@@ -1,0 +1,22 @@
+name: ci/cd
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: main
+      env:
+        REGISTRY: registry.digitalocean.com
+        PREFIX:   registry-carbon-cc/www-util
+      run: |
+        TAG=$(echo $GITHUB_REF | cut -d '/' -f 3)
+        docker login ${REGISTRY} --username ${{ secrets.DO_TOKEN }} --password ${{ secrets.DO_TOKEN }}
+        docker build -t ${REGISTRY}/${IMAGE}:${TAG} .
+        docker push ${REGISTRY}/${IMAGE}:${TAG}
