@@ -14,7 +14,6 @@ import (
 )
 
 var HTTP_BIND = ":8000"
-var GRPC_DIAL = "www-at-jhord-grpc:5000"
 
 func main() {
   bind := _env("HTTP_BIND", HTTP_BIND)
