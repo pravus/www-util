@@ -2,11 +2,13 @@ package main
 
 import (
   "context"
+  "encoding/json"
   "fmt"
   "io/ioutil"
   "log"
   "net/http"
   "os"
+  "sort"
   "strings"
 
   "github.com/go-chi/chi"
@@ -41,8 +43,33 @@ func Hooker() http.HandlerFunc {
       return
     }
 
-    log.Printf("hooker: body: %s", string(body))
-    w.Write([]byte("200 OK"))
+    log.Printf("hooker: headers")
+    names := make([]string, 0, len(r.Header))
+    for name, _ := range r.Header {
+      names = append(names, name)
+    }
+    sort.Strings(names)
+    for _, name := range names {
+      log.Printf("  %s: %s", name, strings.Join(r.Header[name], ", "))
+    }
+
+    log.Printf("hooker: body (%d bytes)", len(body))
+    log.Printf("%s", string(body))
+
+    switch r.Header.Get("Content-Type") {
+    case "application/json":
+      var object interface{}
+      if err := json.Unmarshal(body, &object); err != nil {
+        log.Printf("hooker: json: unmarshal error: %v", err)
+      } else if text, err := json.MarshalIndent(object, "", "  "); err != nil {
+        log.Printf("hooker: json: marshal error: %v", err)
+      } else {
+        log.Printf("hooker: json")
+        log.Printf("%s", text)
+      }
+    }
+
+    w.Write([]byte("200 OK\r\n"))
   })
 }
 
