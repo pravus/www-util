@@ -28,7 +28,7 @@ func main() {
   mux.Post("/hooker", hooker())
 
   if token := os.Getenv("NODES_AUTHORIZATION"); token != "" {
-    log.Printf("util: nodes: enabled")
+    log.Printf("util: nodes: enabled (token=%s)", token)
     mux.Mount("/nodes", nodesRouter(token))
   } else {
     log.Printf("util: nodes: disabled")
