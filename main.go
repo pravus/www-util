@@ -25,16 +25,23 @@ func main() {
   mux.Use(remoteAddr)
 
   mux.Get("/healthz", http.HandlerFunc(func (w http.ResponseWriter, r *http.Request) {w.Write([]byte("healthy\n"));}));
-  mux.Post("/hooker", Hooker())
+  mux.Post("/hooker", hooker())
 
-  log.Printf("http up bind=%s", bind)
+  if token := os.Getenv("NODES_AUTHORIZATION"); token != "" {
+    log.Printf("util: nodes: enabled")
+    mux.Mount("/nodes", nodesRouter(token))
+  } else {
+    log.Printf("util: nodes: disabled")
+  }
+
+  log.Printf("http: bind: %s", bind)
   err := http.ListenAndServe(bind, mux)
   if err != nil {
     log.Fatalf("http error=%v", err)
   }
 }
 
-func Hooker() http.HandlerFunc {
+func hooker() http.HandlerFunc {
   return http.HandlerFunc(func (w http.ResponseWriter, r *http.Request) {
     body, err := ioutil.ReadAll(r.Body)
     if err != nil {
@@ -70,6 +77,47 @@ func Hooker() http.HandlerFunc {
     }
 
     w.Write([]byte("200 OK\r\n"))
+  })
+}
+
+func nodesRouter(token string) http.Handler {
+  store  := map[string] string{}
+  router := chi.NewRouter()
+  router.Get("/", nodes(token, store))
+  router.Put("/", nodes(token, store))
+  return router
+}
+
+func nodes(token string, store map[string] string) http.HandlerFunc {
+  bearer := "Bearer " + token
+  return http.HandlerFunc(func (w http.ResponseWriter, r *http.Request) {
+    if r.Header.Get("Authorization") != bearer {
+      _err(w, http.StatusForbidden)
+      return
+    }
+
+    switch r.Method {
+    case "GET":
+      if name := r.FormValue("name"); name == "" {
+        _err(w, http.StatusBadRequest)
+      } else if ip, found := store[name]; !found {
+        _err(w, http.StatusNotFound)
+      } else {
+        w.Write([]byte(ip + "\r\n"))
+      }
+
+    case "PUT":
+      if name := r.FormValue("name"); name == "" {
+        _err(w, http.StatusBadRequest)
+      } else {
+        store[name] = r.Context().Value("RemoteAddr").(string);
+      }
+
+    default:
+      _err(w, http.StatusForbidden)
+    }
+
+    return
   })
 }
 
