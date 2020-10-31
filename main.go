@@ -123,7 +123,7 @@ func nodes(token string, client *redis.Client) http.HandlerFunc {
     case "PUT":
       if name := r.FormValue("name"); name == "" {
         _err(w, http.StatusBadRequest)
-      } else if err := client.Set(r.Context(), name, r.Context().Value("RemoteAddr").(string), 2 * time.Hour); err != nil {
+      } else if err := client.Set(r.Context(), name, r.Context().Value("RemoteAddr").(string), 2 * time.Hour).Err(); err != nil {
         log.Printf("redis: set(%s): error: %v", name, err)
         _err(w, http.StatusInternalServerError)
       }
