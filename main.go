@@ -33,7 +33,7 @@ func main() {
     token    := os.Getenv("NODES_AUTHORIZATION")
     password := os.Getenv("REDIS_PASSWORD")
     if token != "" && password != "" {
-      log.Printf("util: nodes: enabled", token)
+      log.Printf("util: nodes: enabled")
       mux.Mount("/nodes", nodesRouter(token, password))
     } else {
       log.Printf("util: nodes: disabled")
