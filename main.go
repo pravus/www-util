@@ -10,9 +10,11 @@ import (
   "os"
   "sort"
   "strings"
+  "time"
 
   "github.com/go-chi/chi"
   "github.com/go-chi/chi/middleware"
+  "github.com/go-redis/redis/v8"
 )
 
 var HTTP_BIND = ":8000"
@@ -24,14 +26,18 @@ func main() {
   mux.Use(middleware.Logger)
   mux.Use(remoteAddr)
 
-  mux.Get("/healthz", http.HandlerFunc(func (w http.ResponseWriter, r *http.Request) {w.Write([]byte("healthy\n"));}));
+  mux.Get("/healthz", http.HandlerFunc(func (w http.ResponseWriter, r *http.Request) {w.Write([]byte("healthy\n"))}))
   mux.Post("/hooker", hooker())
 
-  if token := os.Getenv("NODES_AUTHORIZATION"); token != "" {
-    log.Printf("util: nodes: enabled (token=%s)", token)
-    mux.Mount("/nodes", nodesRouter(token))
-  } else {
-    log.Printf("util: nodes: disabled")
+  {
+    token    := os.Getenv("NODES_AUTHORIZATION")
+    password := os.Getenv("REDIS_PASSWORD")
+    if token != "" && password != "" {
+      log.Printf("util: nodes: enabled", token)
+      mux.Mount("/nodes", nodesRouter(token, password))
+    } else {
+      log.Printf("util: nodes: disabled")
+    }
   }
 
   log.Printf("http: bind: %s", bind)
@@ -80,15 +86,18 @@ func hooker() http.HandlerFunc {
   })
 }
 
-func nodesRouter(token string) http.Handler {
-  store  := map[string] string{}
+func nodesRouter(token string, password string) http.Handler {
+  client := redis.NewClient(&redis.Options{
+    Addr:     "redis-nodes:6379",
+    Password: password,
+  })
   router := chi.NewRouter()
-  router.Get("/", nodes(token, store))
-  router.Put("/", nodes(token, store))
+  router.Get("/", nodes(token, client))
+  router.Put("/", nodes(token, client))
   return router
 }
 
-func nodes(token string, store map[string] string) http.HandlerFunc {
+func nodes(token string, client *redis.Client) http.HandlerFunc {
   bearer := "Bearer " + token
   return http.HandlerFunc(func (w http.ResponseWriter, r *http.Request) {
     if r.Header.Get("Authorization") != bearer {
@@ -100,8 +109,13 @@ func nodes(token string, store map[string] string) http.HandlerFunc {
     case "GET":
       if name := r.FormValue("name"); name == "" {
         _err(w, http.StatusBadRequest)
-      } else if ip, found := store[name]; !found {
-        _err(w, http.StatusNotFound)
+      } else if ip, err := client.Get(r.Context(), name).Result(); err != nil {
+        if err == redis.Nil {
+          _err(w, http.StatusNotFound)
+        } else {
+          log.Printf("redis: get(%s): error: %v", name, err)
+          _err(w, http.StatusInternalServerError)
+        }
       } else {
         w.Write([]byte(ip + "\r\n"))
       }
@@ -109,8 +123,9 @@ func nodes(token string, store map[string] string) http.HandlerFunc {
     case "PUT":
       if name := r.FormValue("name"); name == "" {
         _err(w, http.StatusBadRequest)
-      } else {
-        store[name] = r.Context().Value("RemoteAddr").(string);
+      } else if err := client.Set(r.Context(), name, r.Context().Value("RemoteAddr").(string), 2 * time.Hour); err != nil {
+        log.Printf("redis: set(%s): error: %v", name, err)
+        _err(w, http.StatusInternalServerError)
       }
 
     default:
@@ -145,5 +160,5 @@ func _env(name, ifEmpty string) string {
 }
 
 func _err(w http.ResponseWriter, code int) {
-  http.Error(w, fmt.Sprintf("%d %s", code, http.StatusText(code)), code);
+  http.Error(w, fmt.Sprintf("%d %s", code, http.StatusText(code)), code)
 }
